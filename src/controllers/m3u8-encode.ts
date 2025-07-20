@@ -45,10 +45,12 @@ export const m3u8EncodeProxy = async (req: Request, res: Response) => {
     if (isStaticFiles) {
       return response.data.pipe(res);
     }
-    if (!url.endsWith(".m3u8")) {
+    // Use regex to check for .m3u8 before query string
+    const isM3u8 = /\.m3u8(\?|$)/i.test(url);
+    if (!isM3u8) {
       return response.data.pipe(res);
     }
-    const transform = new LineTransformEncode(baseUrl, referer, origin);
+    const transform = new LineTransformEncode(url, referer, origin);
     response.data.pipe(transform).pipe(res);
   } catch (error: any) {
     console.log(error.message);

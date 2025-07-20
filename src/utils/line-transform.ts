@@ -59,16 +59,17 @@ export class LineTransform extends Transform {
   }
 }
 
+// --- PATCH: Fix for correct URL resolution in LineTransformEncode ---
 export class LineTransformEncode extends Transform {
   private buffer: string;
-  private baseUrl: string;
+  private playlistUrl: string;
   private ref: string;
   private orgin: string;
 
-  constructor(baseUrl: string, ref: string = '', orgin: string = '') {
+  constructor(playlistUrl: string, ref: string = '', orgin: string = '') {
     super();
     this.buffer = '';
-    this.baseUrl = baseUrl;
+    this.playlistUrl = playlistUrl;
     this.ref = ref;
     this.orgin = orgin;
   }
@@ -101,26 +102,31 @@ export class LineTransformEncode extends Transform {
   }
 
   private processLine(line: string): string {
+    const trimmedLine = line.trim();
     const params = [];
     if (this.ref) params.push(`ref=${encodeURIComponent(this.ref)}`);
     if (this.orgin) params.push(`orgin=${encodeURIComponent(this.orgin)}`);
     const paramStr = params.length ? `&${params.join('&')}` : '';
 
-    if (line.endsWith('.m3u8') || line.endsWith('.ts')) {
-      const encodedUrl = this.encodeBase64Url(this.baseUrl + line);
-      return `m3u8-encode?url=${encodedUrl}${paramStr}`;
+    // Only transform if not a comment or empty
+    if (trimmedLine && !trimmedLine.startsWith('#')) {
+      let resolvedUrl: string;
+      try {
+        resolvedUrl = new URL(trimmedLine, this.playlistUrl).toString();
+      } catch {
+        resolvedUrl = trimmedLine;
+      }
+      if (
+        trimmedLine.endsWith('.m3u8') ||
+        trimmedLine.endsWith('.ts') ||
+        allowedExtensions.some(ext => trimmedLine.endsWith(ext)) ||
+        trimmedLine.startsWith('http')
+      ) {
+        const encodedUrl = this.encodeBase64Url(resolvedUrl);
+        return `m3u8-encode?url=${encodedUrl}${paramStr}`;
+      }
     }
-
-    if (line.startsWith('http') && !line.endsWith('.m3u8')) {
-      const encodedUrl = this.encodeBase64Url(line);
-      return `m3u8-encode?url=${encodedUrl}${paramStr}`;
-    }
-
-    if (allowedExtensions.some(ext => line.endsWith(ext))) {
-      const encodedUrl = this.encodeBase64Url(line);
-      return `m3u8-encode?url=${encodedUrl}${paramStr}`;
-    }
-
     return line;
   }
 }
+// --- END PATCH ---
