@@ -14,12 +14,16 @@ export const m3u8Proxy = async (req: Request, res: Response) => {
     const isStaticFiles = allowedExtensions.some(ext => url.endsWith(ext));
     const baseUrl = url.replace(/[^/]+$/, "");
 
+    const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
+
+    
     const response = await axios.get(url, {
       responseType: 'stream',
       headers: {
         Accept: "*/*",
         Referer: referer,
-        Origin: origin
+        Origin: origin,
+        "User-Agent": userAgent
       }
     });
 
