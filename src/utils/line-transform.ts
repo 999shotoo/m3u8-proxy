@@ -1,6 +1,9 @@
 import { Transform, TransformCallback } from 'stream';
 
-export const allowedExtensions = ['.ts', '.png', '.jpg', '.webp', '.ico', '.html', '.js', '.css', '.txt'];
+export const allowedExtensions = [
+  '.ts', '.png', '.jpg', '.jpeg', '.webp', '.ico',
+  '.html', '.js', '.css', '.txt', '.mp4', '.m4s', '.aac', '.vtt'
+];
 
 export class LineTransform extends Transform {
   private buffer: string;
@@ -20,46 +23,56 @@ export class LineTransform extends Transform {
     const data = this.buffer + chunk.toString();
     const lines = data.split(/\r?\n/);
     this.buffer = lines.pop() || '';
-
     for (const line of lines) {
-      const modifiedLine = this.processLine(line);
-      this.push(modifiedLine + '\n');
+      this.push(this.processLine(line) + '\n');
     }
-
     callback();
   }
 
   _flush(callback: TransformCallback) {
     if (this.buffer) {
-      const modifiedLine = this.processLine(this.buffer);
-      this.push(modifiedLine);
+      this.push(this.processLine(this.buffer));
     }
     callback();
   }
 
-  private processLine(line: string): string {
-    const params = [];
+  private buildQuery(): string {
+    const params: string[] = [];
     if (this.ref) params.push(`ref=${encodeURIComponent(this.ref)}`);
     if (this.orgin) params.push(`orgin=${encodeURIComponent(this.orgin)}`);
-    const paramStr = params.length ? `&${params.join('&')}` : '';
+    return params.length ? `&${params.join('&')}` : '';
+  }
 
-    if (line.endsWith('.m3u8') || line.endsWith('.ts')) {
-      return `m3u8-proxy?url=${this.baseUrl}${line}${paramStr}`;
+  private processLine(line: string): string {
+    const trimmed = line.trim();
+
+    // Pass through comments, tags, and blank lines untouched
+    if (!trimmed || trimmed.startsWith('#')) {
+      return line;
     }
 
-    if (line.startsWith("http") && !line.endsWith(".m3u8")) {
-      return `m3u8-proxy?url=${encodeURIComponent(line)}${paramStr}`;
+    const isPlayableLine =
+      trimmed.endsWith('.m3u8') ||
+      trimmed.endsWith('.ts') ||
+      allowedExtensions.some(ext => trimmed.endsWith(ext));
+
+    if (!isPlayableLine) {
+      return line;
     }
 
-    if (allowedExtensions.some(ext => line.endsWith(ext))) {
-      return `m3u8-proxy?url=${line}${paramStr}`;
+    // Resolve relative vs absolute correctly (handles ../, protocol-relative, absolute, relative)
+    let resolvedUrl: string;
+    try {
+      resolvedUrl = new URL(trimmed, this.baseUrl).toString();
+    } catch {
+      resolvedUrl = trimmed;
     }
 
-    return line;
+    return `m3u8-proxy?url=${encodeURIComponent(resolvedUrl)}${this.buildQuery()}`;
   }
 }
 
-// --- PATCH: Fix for correct URL resolution in LineTransformEncode ---
+// --- LineTransformEncode (base64-url variant) ---
 export class LineTransformEncode extends Transform {
   private buffer: string;
   private playlistUrl: string;
@@ -78,55 +91,59 @@ export class LineTransformEncode extends Transform {
     const data = this.buffer + chunk.toString();
     const lines = data.split(/\r?\n/);
     this.buffer = lines.pop() || '';
-
     for (const line of lines) {
-      const modifiedLine = this.processLine(line);
-      this.push(modifiedLine + '\n');
+      this.push(this.processLine(line) + '\n');
     }
-
     callback();
   }
 
   _flush(callback: TransformCallback) {
     if (this.buffer) {
-      const modifiedLine = this.processLine(this.buffer);
-      this.push(modifiedLine);
+      this.push(this.processLine(this.buffer));
     }
     callback();
   }
 
   private encodeBase64Url(str: string): string {
-    let encoded = Buffer.from(str, 'utf-8').toString('base64');
-    encoded = encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    return encoded;
+    return Buffer.from(str, 'utf-8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  private buildQuery(): string {
+    const params: string[] = [];
+    if (this.ref) params.push(`ref=${encodeURIComponent(this.ref)}`);
+    if (this.orgin) params.push(`orgin=${encodeURIComponent(this.orgin)}`);
+    return params.length ? `&${params.join('&')}` : '';
   }
 
   private processLine(line: string): string {
-    const trimmedLine = line.trim();
-    const params = [];
-    if (this.ref) params.push(`ref=${encodeURIComponent(this.ref)}`);
-    if (this.orgin) params.push(`orgin=${encodeURIComponent(this.orgin)}`);
-    const paramStr = params.length ? `&${params.join('&')}` : '';
+    const trimmed = line.trim();
 
-    // Only transform if not a comment or empty
-    if (trimmedLine && !trimmedLine.startsWith('#')) {
-      let resolvedUrl: string;
-      try {
-        resolvedUrl = new URL(trimmedLine, this.playlistUrl).toString();
-      } catch {
-        resolvedUrl = trimmedLine;
-      }
-      if (
-        trimmedLine.endsWith('.m3u8') ||
-        trimmedLine.endsWith('.ts') ||
-        allowedExtensions.some(ext => trimmedLine.endsWith(ext)) ||
-        trimmedLine.startsWith('http')
-      ) {
-        const encodedUrl = this.encodeBase64Url(resolvedUrl);
-        return `m3u8-encode?url=${encodedUrl}${paramStr}`;
-      }
+    if (!trimmed || trimmed.startsWith('#')) {
+      return line;
     }
-    return line;
+
+    const isPlayableLine =
+      trimmed.endsWith('.m3u8') ||
+      trimmed.endsWith('.ts') ||
+      allowedExtensions.some(ext => trimmed.endsWith(ext)) ||
+      trimmed.startsWith('http');
+
+    if (!isPlayableLine) {
+      return line;
+    }
+
+    let resolvedUrl: string;
+    try {
+      resolvedUrl = new URL(trimmed, this.playlistUrl).toString();
+    } catch {
+      resolvedUrl = trimmed;
+    }
+
+    const encodedUrl = this.encodeBase64Url(resolvedUrl);
+    return `m3u8-encode?url=${encodedUrl}${this.buildQuery()}`;
   }
 }
-// --- END PATCH ---
