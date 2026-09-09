@@ -10,8 +10,9 @@ export const m3u8Proxy = async (req: Request, res: Response) => {
     const referer = (req.query.ref as string) || "http://localhost/";
     const origin = (req.query.orgin as string) || "http://localhost";
     const isStaticFile = allowedExtensions.some(ext => url.endsWith(ext));
-    const isM3u8 = url.endsWith(".m3u8");
-    const baseUrl = url.replace(/[^/]+$/, "");
+    const target = new URL(String(req.query.url));
+    const isM3u8 = /\.m3u8$/i.test(target.pathname);
+    const baseUrl = target.href.slice(0, target.href.lastIndexOf("/") + 1);
     const userAgent =
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
 
